@@ -7,13 +7,17 @@ from backend.services.errors import ConflictError, ForbiddenError, NotFoundError
 from backend.services.serialization import serialize_recipe_detail, serialize_recipe_summary
 
 
-def list_recipes(current_user: User) -> list[dict]:
+def recipe_visibility(current_user: User):
     visibility = (Recipe.owner.is_null(True)) | (Recipe.owner == current_user)
     if current_user.is_admin:
         visibility = visibility | (Recipe.moderation_status == "pending")
+    return visibility
+
+
+def list_recipes(current_user: User) -> list[dict]:
     query = (
         Recipe.select()
-        .where(visibility)
+        .where(recipe_visibility(current_user))
         .order_by(Recipe.owner, Recipe.category, Recipe.name)
     )
     result = []

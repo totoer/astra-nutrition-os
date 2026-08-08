@@ -326,6 +326,39 @@ def main() -> None:
             assert client.get("/api/v1/progress", headers=user_headers).json() == []
             assert client.get("/api/v1/workouts", headers=user_headers).json() == []
 
+            response = client.post(
+                "/api/v1/recipes",
+                headers=user_headers,
+                json={
+                    "category": "Ready",
+                    "name": "Private high-protein recipe",
+                    "status": "Approved",
+                    "servings": 1,
+                    "manual_kcal_per_serving": 999,
+                    "manual_protein_per_serving_g": 9999,
+                    "manual_fat_per_serving_g": 1,
+                    "manual_carbs_per_serving_g": 1,
+                },
+            )
+            assert response.status_code == 201, response.text
+            private_recipe = response.json()
+            assert private_recipe["collection"] == "local"
+            user_dashboard = client.get("/api/v1/dashboard", headers=user_headers).json()
+            assert user_dashboard["top"][0]["id"] == private_recipe["id"]
+
+            response = client.post(
+                "/api/v1/auth/register",
+                json={"email": "viewer@example.com", "password": "viewer-password"},
+            )
+            assert response.status_code == 201, response.text
+            viewer_headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
+            visible_recipes = client.get("/api/v1/recipes", headers=viewer_headers).json()
+            viewer_dashboard = client.get("/api/v1/dashboard", headers=viewer_headers).json()
+            assert private_recipe["id"] not in {item["id"] for item in visible_recipes}
+            assert private_recipe["id"] not in {item["id"] for item in viewer_dashboard["top"]}
+            assert viewer_dashboard["recipes"] == len(visible_recipes)
+            assert viewer_dashboard["approved"] == sum(item["status"] == "Approved" for item in visible_recipes)
+
             response = client.get("/api/v1/products", headers=user_headers)
             assert response.status_code == 200
             assert len(response.json()) > 0

@@ -20,7 +20,11 @@ const loading = ref(false);
 const error = ref('');
 const detail = ref<RecipeDetail | null>(null);
 const recipe = computed<RecipeSummary | null>(() => detail.value?.recipe || null);
-const canManage = computed(() => Boolean(recipe.value && (props.isAdmin || recipe.value.collection === 'local')));
+const canManage = computed(() => {
+  if (!recipe.value) return false;
+  if (recipe.value.collection === 'common') return props.isAdmin;
+  return !props.isAdmin && recipe.value.is_submitter;
+});
 
 watch(
   () => props.recipeId,

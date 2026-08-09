@@ -14,6 +14,10 @@ import type {
 } from '@/types';
 
 const TOKEN_KEY = 'astra_access_token';
+const NUTRITION_SCAN_MAX_LANDSCAPE_WIDTH = 1920;
+const NUTRITION_SCAN_MAX_LANDSCAPE_HEIGHT = 1080;
+const NUTRITION_SCAN_IMAGE_TYPE = 'image/jpeg';
+const NUTRITION_SCAN_IMAGE_QUALITY = 0.9;
 let unauthorizedHandler: (() => void) | null = null;
 
 export function getAccessToken() {
@@ -66,6 +70,63 @@ function write<T>(method: 'POST' | 'PUT' | 'DELETE', path: string, body?: unknow
   });
 }
 
+function fullHdSize(width: number, height: number) {
+  const landscape = width >= height;
+  const maxWidth = landscape ? NUTRITION_SCAN_MAX_LANDSCAPE_WIDTH : NUTRITION_SCAN_MAX_LANDSCAPE_HEIGHT;
+  const maxHeight = landscape ? NUTRITION_SCAN_MAX_LANDSCAPE_HEIGHT : NUTRITION_SCAN_MAX_LANDSCAPE_WIDTH;
+  const scale = Math.min(1, maxWidth / width, maxHeight / height);
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale))
+  };
+}
+
+function canvasBlob(canvas: HTMLCanvasElement, type: string, quality: number) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('Не удалось сжать изображение'));
+    }, type, quality);
+  });
+}
+
+function compressedImageName(name: string) {
+  const basename = name.replace(/\.[^.]+$/, '') || 'nutrition-label';
+  return `${basename}-full-hd.jpg`;
+}
+
+async function compressImageForNutritionScan(file: File) {
+  const source = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  let bitmap: ImageBitmap | null = null;
+
+  try {
+    const size = fullHdSize(source.width, source.height);
+    bitmap = await createImageBitmap(source, {
+      resizeWidth: size.width,
+      resizeHeight: size.height,
+      resizeQuality: 'high'
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Не удалось подготовить изображение');
+
+    context.fillStyle = '#fff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(bitmap, 0, 0);
+    const blob = await canvasBlob(canvas, NUTRITION_SCAN_IMAGE_TYPE, NUTRITION_SCAN_IMAGE_QUALITY);
+    return new File([blob], compressedImageName(file.name), {
+      type: NUTRITION_SCAN_IMAGE_TYPE,
+      lastModified: file.lastModified
+    });
+  } finally {
+    bitmap?.close();
+    source.close();
+  }
+}
+
 export const api = {
   me: () => request<AuthUser>('auth/me'),
   login: (email: string, password: string) => request<AuthResponse>('auth/login', {
@@ -79,9 +140,9 @@ export const api = {
   logout: () => write<{ ok: boolean }>('POST', 'auth/logout'),
   dashboard: () => request<DashboardResponse>('dashboard'),
   products: () => request<Product[]>('products'),
-  scanProductNutrition: (file: File) => {
+  scanProductNutrition: async (file: File) => {
     const body = new FormData();
-    body.append('image', file);
+    body.append('image', await compressImageForNutritionScan(file));
     return request<ProductNutritionScanResult>('products/scan-nutrition-label', {
       method: 'POST',
       body

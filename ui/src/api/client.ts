@@ -1,6 +1,7 @@
 import type {
   AuthResponse,
   AuthUser,
+  RegisteredUser,
   DashboardResponse,
   DiaryEntry,
   Exercise,
@@ -130,6 +131,7 @@ async function compressImageForNutritionScan(file: File) {
 
 export const api = {
   me: () => request<AuthUser>('auth/me'),
+  users: () => request<RegisteredUser[]>('auth/users'),
   login: (email: string, password: string) => request<AuthResponse>('auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password })
